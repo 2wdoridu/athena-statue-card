@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>석상 카드</title>
+<style>
+  html, body { margin: 0; }
+  body { background: #f3f3ef; color: #111; font-family: "Pretendard Variable", Pretendard, -apple-system, "Segoe UI", "Noto Sans KR", sans-serif; padding: 20px 16px 48px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 16px; max-width: 960px; margin: 0 auto; }
+  .item { display: block; text-decoration: none; color: inherit; }
+  .item img { display: block; width: 100%; aspect-ratio: 3 / 4; object-fit: cover; border-radius: 22px; box-shadow: 0 1px 1px rgb(60 40 30 / .14), 0 14px 28px -14px rgb(80 50 70 / .45); transition: transform .3s; }
+  .item:hover img, .item:active img { transform: translateY(-3px); }
+  .item strong { display: block; margin-top: 10px; font-size: 15px; }
+  .item span { color: #666; font-size: 13px; }
+</style>
+</head>
+<body>
+<div class="grid">
+  <a class="item" href="detail.html">
+    <img src="img/athena-card.jpg" alt="아테나 석상">
+    <strong>아테나 석상</strong>
+    <span>3D 테스트</span>
+  </a>
+</div>
+</body>
+</html>
