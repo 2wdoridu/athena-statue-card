@@ -9,12 +9,12 @@
   html, body { margin: 0; height: 100%; overflow: hidden; background: #140703; }
   .card {
     position: fixed; inset: 0;
-    background: radial-gradient(ellipse at 50% 58%, #7a3410 0%, #3a170a 48%, #140703 100%);
+    background: radial-gradient(ellipse at 50% 52%, #6e2f0e 0%, #33150a 50%, #120602 100%);
   }
   canvas { display: block; width: 100%; height: 100%; touch-action: none; cursor: grab; }
   canvas:active { cursor: grabbing; }
-  /* 아래쪽 옷자락 밑면을 어둠 속으로 풀어 준다 */
-  .card::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 24%; pointer-events: none; background: linear-gradient(to bottom, rgba(20, 7, 3, 0), rgba(20, 7, 3, 0.92)); }
+  /* 받침대 아래쪽을 어둠 속으로 풀어 준다 */
+  .card::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 30%; pointer-events: none; background: linear-gradient(to bottom, rgba(18, 6, 2, 0), rgba(18, 6, 2, 0.95)); }
 </style>
 </head>
 <body>
@@ -33,7 +33,8 @@
   const scene = new THREE.Scene();
   const cam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 60);
   const card = document.getElementById("card");
-  const TARGET = new THREE.Vector3(0, 0.86, 0);
+  const BASE_Y = 0.9; // 받침대 윗면 높이 = 석상 발 높이
+  const TARGET = new THREE.Vector3(0, 2.12, 0);
   // 카메라는 석상보다 아래에서 45도로 올려다보고, 옆으로도 45도 돌아가 있다
   const VIEW = { az: Math.PI / 4, el: -Math.PI / 4, zoom: 1 };
   const DEFAULT_VIEW = { az: VIEW.az, el: VIEW.el, zoom: 1 };
@@ -41,7 +42,7 @@
   (function () { const q = new URLSearchParams(location.search); if (q.has("ty")) TARGET.y = +q.get("ty"); if (q.has("zoom")) VIEW.zoom = +q.get("zoom"); if (q.has("el")) VIEW.el = +q.get("el") * Math.PI / 180; if (q.has("az")) VIEW.az = +q.get("az") * Math.PI / 180; })();
 
   function placeCamera() {
-    const d = 12;
+    const d = 14;
     cam.position.set(
       TARGET.x + d * Math.cos(VIEW.el) * Math.sin(VIEW.az),
       TARGET.y + d * Math.sin(VIEW.el),
@@ -52,12 +53,12 @@
   function resize() {
     const w = card.clientWidth, h = card.clientHeight, a = w / h;
     renderer.setSize(w, h, false);
-    const H = Math.max(2.05, 1.3 / a) / VIEW.zoom;
+    const H = Math.max(2.0, 1.25 / a) / VIEW.zoom;
     cam.left = -H * a / 2; cam.right = H * a / 2; cam.top = H / 2; cam.bottom = -H / 2;
     cam.updateProjectionMatrix();
   }
 
-  // ---------- 보간, 질감 ----------
+  // ---------- 보조 함수 ----------
   function makeInterp(tab) {
     const n = tab.length, m = [];
     for (let i = 0; i < n; i++) {
@@ -73,6 +74,7 @@
     };
   }
   const sm = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+  const gau = (dx, dy, sx, sy) => Math.exp(-(dx * dx) / (2 * sx * sx) - (dy * dy) / (2 * sy * sy));
 
   function marbleTexture() {
     const s = 512, c = document.createElement("canvas");
@@ -81,14 +83,14 @@
     g.fillStyle = "#ebdfca"; g.fillRect(0, 0, s, s);
     let seed = 11;
     const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
-    for (let i = 0; i < 280; i++) {
+    for (let i = 0; i < 300; i++) {
       const x = rnd() * s, y = rnd() * s, r = 14 + rnd() * 80;
       const gr = g.createRadialGradient(x, y, 0, x, y, r);
-      gr.addColorStop(0, rnd() < 0.62 ? "rgba(125,98,66,0.075)" : "rgba(255,250,236,0.08)");
+      gr.addColorStop(0, rnd() < 0.62 ? "rgba(125,98,66,0.085)" : "rgba(255,250,236,0.08)");
       gr.addColorStop(1, "rgba(0,0,0,0)");
       g.fillStyle = gr; g.fillRect(x - r, y - r, r * 2, r * 2);
     }
-    g.strokeStyle = "rgba(150,128,102,0.16)"; g.lineWidth = 1;
+    g.strokeStyle = "rgba(150,128,102,0.15)"; g.lineWidth = 1;
     for (let i = 0; i < 16; i++) {
       g.beginPath(); let x = rnd() * s, y = rnd() * s; g.moveTo(x, y);
       for (let k = 0; k < 10; k++) { x += (rnd() - 0.4) * 60; y += (rnd() - 0.5) * 60; g.lineTo(x, y); }
@@ -105,34 +107,28 @@
     return t;
   }
   const tex = marbleTexture();
-  const marble = new THREE.MeshStandardMaterial({ map: tex, bumpMap: tex, bumpScale: 0.7, roughness: 0.86, metalness: 0 });
-  const marbleHair = marble.clone(); marbleHair.color = new THREE.Color(0xe2cfb2);
-  const plinthMat = marble.clone(); plinthMat.color = new THREE.Color(0xcdb99d);
+  const marble = new THREE.MeshStandardMaterial({ map: tex, bumpMap: tex, bumpScale: 0.8, roughness: 0.82, metalness: 0, side: THREE.DoubleSide });
+  const marbleHair = marble.clone(); marbleHair.color = new THREE.Color(0xdcc7a6);
+  const plinthMat = new THREE.MeshStandardMaterial({ color: 0x9a8670, roughness: 0.88, metalness: 0 });
+  const faceMat = marble.clone(); faceMat.vertexColors = true;
 
   const statue = new THREE.Group();
-  statue.rotation.y = 0.5; // 석상이 카메라 쪽으로 살짝 돌아서 얼굴이 보이게
+  statue.rotation.y = 0.5; // 카메라 쪽으로 살짝 돌아서 얼굴이 보이게
+  statue.position.y = BASE_Y;
   scene.add(statue);
   function add(mesh, parent) { mesh.castShadow = true; mesh.receiveShadow = true; (parent || statue).add(mesh); return mesh; }
 
   // ---------- 몸(주름 있는 키톤) ----------
-  const RX = [[0, 0.29], [0.12, 0.265], [0.4, 0.225], [0.75, 0.215], [0.98, 0.165], [1.12, 0.175], [1.25, 0.2], [1.34, 0.225], [1.40, 0.15], [1.46, 0.062]];
-  const RZ = [[0, 0.23], [0.12, 0.21], [0.4, 0.16], [0.75, 0.145], [0.98, 0.11], [1.12, 0.135], [1.25, 0.125], [1.34, 0.1], [1.40, 0.08], [1.46, 0.052]];
-  function bodyGeometry() {
-    const fx = makeInterp(RX), fz = makeInterp(RZ);
-    const NY = 150, NT = 120, H = 1.46;
+  const RX = [[0, 0.30], [0.15, 0.27], [0.45, 0.225], [0.78, 0.215], [0.98, 0.17], [1.1, 0.178], [1.22, 0.205], [1.32, 0.235], [1.38, 0.185], [1.42, 0.115], [1.47, 0.052]];
+  const RZ = [[0, 0.235], [0.15, 0.21], [0.45, 0.165], [0.78, 0.155], [0.98, 0.108], [1.1, 0.14], [1.22, 0.135], [1.32, 0.105], [1.38, 0.09], [1.42, 0.066], [1.47, 0.048]];
+  const fx = makeInterp(RX), fz = makeInterp(RZ);
+  const BODY_H = 1.47;
+
+  function surface(NY, NT, point) {
     const pos = [], uv = [], idx = [];
-    for (let iy = 0; iy <= NY; iy++) {
-      const y = H * iy / NY;
-      const mask = (y < 0.95 ? 1 : 1 - 0.62 * sm(0.95, 1.15, y)) * (1 - sm(1.3, 1.4, y));
-      const hem = 1 + (y < 0.1 ? (0.1 - y) * 0.5 : 0);
-      const cx = 0.022 * Math.sin(y * 2.3);
-      for (let it = 0; it <= NT; it++) {
-        const th = 2 * Math.PI * it / NT;
-        const p = Math.abs(Math.sin(30 * th / 2));
-        const pr = 1 + 0.052 * (p - 0.5) * mask * (0.8 + 0.2 * Math.sin(y * 9 + th * 3));
-        pos.push(Math.sin(th) * fx(y) * pr * hem + cx, y, Math.cos(th) * fz(y) * pr * hem);
-        uv.push(it / NT * 2, y / H);
-      }
+    for (let iy = 0; iy <= NY; iy++) for (let it = 0; it <= NT; it++) {
+      const p = point(iy / NY, 2 * Math.PI * it / NT);
+      pos.push(p[0], p[1], p[2]); uv.push(it / NT * 2, iy / NY);
     }
     for (let iy = 0; iy < NY; iy++) for (let it = 0; it < NT; it++) {
       const a = iy * (NT + 1) + it, b = a + NT + 1;
@@ -152,48 +148,71 @@
     }
     return g;
   }
-  add(new THREE.Mesh(bodyGeometry(), marble));
+  // 주름: 간격과 깊이가 조금씩 다르게
+  function pleat(th, y, n, amp) {
+    const w = th + 0.12 * Math.sin(3 * th + y * 0.6) + 0.05 * Math.sin(7 * th - y * 0.8);
+    const p = Math.abs(Math.sin(n * w / 2));
+    return amp * (Math.pow(p, 0.8) - 0.5) * (0.75 + 0.25 * Math.sin(y * 6 + th * 2));
+  }
+  // 체중을 싣는 다리의 무릎, 가슴의 볼륨
+  function sculpt(x, y, z) {
+    const f = sm(0, 0.1, z);
+    z += f * 0.04 * gau(x - 0.085, y - 0.5, 0.075, 0.13);
+    z += f * 0.018 * gau(x + 0.1, y - 0.46, 0.07, 0.12);
+    z += f * 0.024 * gau(Math.abs(x) - 0.075, y - 1.2, 0.06, 0.06);
+    return z;
+  }
+  const body = add(new THREE.Mesh(surface(170, 128, (v, th) => {
+    const y = BODY_H * v;
+    const mask = (y < 0.95 ? 1 : 1 - 0.6 * sm(0.95, 1.15, y)) * (1 - sm(1.32, 1.42, y));
+    const hem = 1 + (y < 0.1 ? (0.1 - y) * 0.5 : 0);
+    const cx = 0.024 * Math.sin(y * 2.3);
+    const pr = 1 + pleat(th, y, 22, 0.07) * mask;
+    const x = Math.sin(th) * fx(y) * pr * hem + cx, z = Math.cos(th) * fz(y) * pr * hem;
+    return [x, y, sculpt(x, y, z)];
+  }), marble));
 
-  // 허리끈, 목선
   function ring(rx, rz, tube, y, parent) {
     const m = new THREE.Mesh(new THREE.TorusGeometry(1, tube, 14, 64), marble);
     m.rotation.x = Math.PI / 2; m.scale.set(rx, rz, 1); m.position.y = y;
     return add(m, parent);
   }
-  ring(0.172, 0.138, 0.011, 1.1);
-  ring(0.168, 0.136, 0.007, 1.075);
-  ring(0.11, 0.09, 0.008, 1.385);
-
-  // 발끝
-  [-0.075, 0.075].forEach(x => {
-    const f = new THREE.Mesh(new THREE.SphereGeometry(1, 20, 14), marble);
-    f.scale.set(0.045, 0.028, 0.075); f.position.set(x, 0.026, 0.245);
-    add(f);
-  });
+  ring(0.176, 0.146, 0.011, 1.1);
 
   // ---------- 목, 머리 ----------
-  const neck = add(new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.058, 0.16, 28), marble));
-  neck.position.set(0.004, 1.47, 0.006);
+  const neck = add(new THREE.Mesh(new THREE.CylinderGeometry(0.043, 0.054, 0.14, 28), marble));
+  neck.position.set(0.004, 1.465, 0.01);
 
   function headGeometry() {
     const g = new THREE.SphereGeometry(1, 140, 110);
     const p = g.attributes.position;
-    const gau = (dx, dy, sx, sy) => Math.exp(-(dx * dx) / (2 * sx * sx) - (dy * dy) / (2 * sy * sy));
+    const col = new Float32Array(p.count * 3);
     for (let i = 0; i < p.count; i++) {
       const x = p.getX(i), y = p.getY(i), z = p.getZ(i);
       const f = Math.max(0, (z - 0.05) / 0.95);
-      let d = 0;
-      d += 0.19 * gau(x, y - 0.02, 0.07, 0.19) * f;
-      d += 0.16 * gau(x, y + 0.17, 0.11, 0.07) * f;
-      d += 0.09 * gau(x, y - 0.25, 0.5, 0.05) * f;
-      d -= 0.13 * (gau(x - 0.42, y - 0.17, 0.12, 0.06) + gau(x + 0.42, y - 0.17, 0.12, 0.06)) * f;
-      d += 0.075 * gau(x, y + 0.36, 0.19, 0.045) * f;
-      d -= 0.04 * gau(x, y + 0.31, 0.15, 0.014) * f;
-      d += 0.1 * gau(x, y + 0.64, 0.19, 0.1) * f;
+      let d = 0, occ = 0;
+      d += 0.085 * gau(x, y - 0.02, 0.065, 0.19) * f;                                   // 콧대
+      d += 0.06 * gau(x, y + 0.17, 0.09, 0.06) * f;                                  // 코끝
+      d += 0.09 * gau(x, y - 0.26, 0.5, 0.05) * f;                                   // 눈썹뼈
+      const sock = gau(x - 0.42, y - 0.17, 0.13, 0.06) + gau(x + 0.42, y - 0.17, 0.13, 0.06);
+      d -= 0.08 * sock * f; occ += 0.2 * sock * f;                                  // 눈두덩
+      const lid = gau(x - 0.42, y - 0.2, 0.14, 0.022) + gau(x + 0.42, y - 0.2, 0.14, 0.022);
+      d += 0.08 * lid * f;                                                           // 윗눈꺼풀 선
+      const lips = gau(x, y + 0.37, 0.19, 0.04);
+      d += 0.075 * lips * f;
+      const seam = gau(x, y + 0.315, 0.15, 0.012);
+      d -= 0.04 * seam * f; occ += 0.25 * seam * f;                                   // 입술 사이
+      d += 0.1 * gau(x, y + 0.65, 0.19, 0.1) * f;                                    // 턱
       d -= 0.06 * (gau(x - 0.6, y + 0.16, 0.1, 0.2) + gau(x + 0.6, y + 0.16, 0.1, 0.2)) * f;
+      const nost = gau(x - 0.12, y + 0.2, 0.05, 0.03) + gau(x + 0.12, y + 0.2, 0.05, 0.03);
+      occ += 0.22 * nost * f;                                                         // 콧구멍
+      occ += 0.25 * gau(x, y + 0.82, 0.4, 0.08);                                     // 턱 아래
       const k = 1 + d;
       p.setXYZ(i, x * k, y * k, z * k);
+      const c = 1 - Math.min(0.6, occ);
+      col[i * 3] = c; col[i * 3 + 1] = c; col[i * 3 + 2] = c;
     }
+    g.setAttribute("color", new THREE.BufferAttribute(col, 3));
     g.computeVertexNormals();
     return g;
   }
@@ -203,50 +222,59 @@
     for (let i = 0; i < p.count; i++) {
       const x = p.getX(i), y = p.getY(i), z = p.getZ(i);
       const ang = Math.atan2(x, z);
-      const k = 1 + 0.006 * Math.sin(ang * 16) * (0.5 + 0.5 * y) - 0.012 * Math.exp(-(x * x) / 0.003) * (y > 0.2 ? 1 : 0);
+      const flow = Math.sin(ang * 14 + y * 5) * 0.004 * (0.5 + 0.5 * y);
+      const part = 0.014 * Math.exp(-(x * x) / 0.0025) * (y > 0.1 ? 1 : 0);
+      const k = 1 + flow - part;
       p.setXYZ(i, x * k, y * k, z * k);
     }
     g.computeVertexNormals();
     return g;
   }
   const hairMat = marbleHair.clone();
+  hairMat.side = THREE.FrontSide;
   hairMat.onBeforeCompile = function (shader) {
     shader.vertexShader = shader.vertexShader
       .replace("#include <common>", "#include <common>\nvarying vec3 vLocal;")
       .replace("#include <begin_vertex>", "#include <begin_vertex>\nvLocal = position;");
     shader.fragmentShader = shader.fragmentShader
       .replace("#include <common>", "#include <common>\nvarying vec3 vLocal;")
-      .replace("void main() {", "void main() {\n  vec3 hd = normalize(vLocal);\n  float hl = 0.56 - 0.56 * smoothstep(0.3, 0.93, abs(hd.x));\n  if ((hd.z > 0.02 && hd.y < hl) || hd.y < -0.72) discard;");
+      .replace("void main() {", "void main() {\n  vec3 hd = normalize(vLocal);\n  float hl = 0.5 - 0.5 * smoothstep(0.3, 0.93, abs(hd.x));\n  if ((hd.z > 0.02 && hd.y < hl) || hd.y < -0.72) discard;");
   };
   const head = new THREE.Group();
-  head.position.set(0.004, 1.625, 0.012);
-  head.rotation.x = 0.24;
+  head.position.set(0.004, 1.625, 0.016);
+  head.rotation.x = 0.16;
   statue.add(head);
-  const face = add(new THREE.Mesh(headGeometry(), marble), head);
+  const face = add(new THREE.Mesh(headGeometry(), faceMat), head);
   face.scale.set(0.08, 0.108, 0.094);
   const hair = add(new THREE.Mesh(hairGeometry(), hairMat), head);
-  hair.scale.set(0.088, 0.116, 0.104); hair.position.set(0, 0.006, -0.006);
+  hair.scale.set(0.0835, 0.1115, 0.0985); hair.position.set(0, 0.003, -0.003);
+  // 이마선을 가리는 머리띠
+  (function () {
+    const m = new THREE.Mesh(new THREE.TorusGeometry(1, 0.0075, 12, 80), marble);
+    m.rotation.x = Math.PI / 2 + 0.12; m.scale.set(0.0765, 0.091, 1); m.position.set(0, 0.057, -0.004);
+    add(m, head);
+  })();
   const bun = new THREE.Mesh(new THREE.SphereGeometry(1, 28, 20), marbleHair);
-  bun.scale.set(0.05, 0.048, 0.05); bun.position.set(0, -0.03, -0.1);
+  bun.scale.set(0.052, 0.05, 0.052); bun.position.set(0, -0.035, -0.1);
   add(bun, head);
 
   // 어깨 위로 흘러내린 땋은 머리
   (function braid() {
     const curve = new THREE.CatmullRomCurve3([
-      new THREE.Vector3(-0.082, 1.585, 0.0),
-      new THREE.Vector3(-0.115, 1.48, 0.06),
-      new THREE.Vector3(-0.125, 1.33, 0.115),
-      new THREE.Vector3(-0.11, 1.17, 0.135)
+      new THREE.Vector3(-0.085, 1.605, 0.0),
+      new THREE.Vector3(-0.122, 1.49, 0.065),
+      new THREE.Vector3(-0.13, 1.34, 0.12),
+      new THREE.Vector3(-0.115, 1.17, 0.14)
     ]);
-    const N = 15;
+    const N = 17;
     for (let i = 0; i < N; i++) {
       const t = i / (N - 1), pt = curve.getPoint(t);
       const s = new THREE.Mesh(new THREE.SphereGeometry(1, 16, 12), marbleHair);
-      const r = 0.03 - 0.012 * t;
-      s.scale.set(r, r * 1.35, r);
+      const r = 0.031 - 0.013 * t;
+      s.scale.set(r * 1.1, r * 1.4, r);
       s.position.copy(pt);
-      s.position.x += Math.sin(i * 2.1) * 0.006;
-      s.rotation.z = (i % 2 ? 0.3 : -0.3);
+      s.position.x += (i % 2 ? 0.008 : -0.008);
+      s.rotation.z = (i % 2 ? 0.45 : -0.45);
       add(s);
     }
   })();
@@ -277,69 +305,76 @@
   }
   function arm(S, E, W, roll) {
     const len = (a, b) => Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]);
-    ball(S, 0.05); ball(E, 0.036); ball(W, 0.027);
-    between(S, E, new THREE.CylinderGeometry(0.036, 0.043, len(S, E), 20));
-    between(E, W, new THREE.CylinderGeometry(0.026, 0.034, len(E, W), 20));
-    // 소매
-    const sleeveEnd = [S[0] + (E[0] - S[0]) * 0.6, S[1] + (E[1] - S[1]) * 0.6, S[2] + (E[2] - S[2]) * 0.6];
-    const sl = flutedCylinder(0.07, 0.062, len(S, sleeveEnd), 14, 0.2);
-    const sm_ = between(S, sleeveEnd, sl);
-    sm_.material = marble; sm_.material.side = THREE.DoubleSide;
-    // 손: 손목에서 팔뚝 방향으로 이어짐
+    ball(S, 0.054); ball(E, 0.04); ball(W, 0.03);
+    between(S, E, new THREE.CylinderGeometry(0.04, 0.047, len(S, E), 22));
+    between(E, W, new THREE.CylinderGeometry(0.029, 0.038, len(E, W), 22));
+    const sleeveEnd = [S[0] + (E[0] - S[0]) * 0.62, S[1] + (E[1] - S[1]) * 0.62, S[2] + (E[2] - S[2]) * 0.62];
+    between(S, sleeveEnd, flutedCylinder(0.076, 0.07, len(S, sleeveEnd), 18, 0.1));
     const dir = new THREE.Vector3(W[0] - E[0], W[1] - E[1], W[2] - E[2]).normalize();
     const hand = new THREE.Group();
     hand.position.set(...W);
     hand.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
     hand.rotateY(roll);
-    const palm = new THREE.Mesh(new THREE.SphereGeometry(1, 20, 14), marble);
-    palm.scale.set(0.036, 0.046, 0.017); palm.position.y = 0.044;
+    statue.add(hand);
+    const palm = new THREE.Mesh(new THREE.SphereGeometry(1, 22, 16), marble);
+    palm.scale.set(0.042, 0.05, 0.02); palm.position.y = 0.046;
     add(palm, hand);
     for (let i = 0; i < 4; i++) {
-      const L = [0.034, 0.04, 0.037, 0.03][i];
-      const f = new THREE.Mesh(new THREE.CapsuleGeometry(0.0072, L, 4, 8), marble);
-      f.position.set((i - 1.5) * 0.0105, 0.088 + L * 0.5, 0);
-      add(f, hand);
+      const L = [0.036, 0.043, 0.04, 0.032][i];
+      const fg = new THREE.Group();
+      fg.position.set((i - 1.5) * 0.0115, 0.09, 0);
+      fg.rotation.x = 0.28; fg.rotation.z = (i - 1.5) * -0.06;
+      const f = new THREE.Mesh(new THREE.CapsuleGeometry(0.0078, L, 4, 8), marble);
+      f.position.y = L * 0.5 + 0.004;
+      add(f, fg);
+      hand.add(fg);
     }
-    const th = new THREE.Mesh(new THREE.CapsuleGeometry(0.008, 0.028, 4, 8), marble);
-    th.position.set(-0.036, 0.055, 0.004); th.rotation.z = 0.7;
+    const th = new THREE.Mesh(new THREE.CapsuleGeometry(0.0088, 0.03, 4, 8), marble);
+    th.position.set(-0.04, 0.058, 0.006); th.rotation.z = 0.75;
     add(th, hand);
   }
   // 석상의 오른팔: 팔꿈치를 굽혀 손을 가슴 앞으로
-  arm([-0.215, 1.33, 0.0], [-0.245, 1.07, 0.045], [-0.135, 1.165, 0.215], -1.2);
+  arm([-0.228, 1.33, 0.0], [-0.258, 1.06, 0.05], [-0.14, 1.17, 0.225], -1.2);
   // 왼팔: 몸 옆으로 늘어뜨림
-  arm([0.215, 1.33, 0.0], [0.255, 1.06, 0.0], [0.262, 0.82, 0.045], 1.2);
+  arm([0.228, 1.33, 0.0], [0.278, 1.05, 0.01], [0.278, 0.8, 0.07], 1.2);
 
-  // 아래에서 올려다보므로 옷자락 밑면을 막는 바닥판
-  const capMat = marble.clone(); capMat.color = new THREE.Color(0x8d7d6a);
-  const cap = new THREE.Mesh(new THREE.CircleGeometry(1, 64), capMat);
-  cap.rotation.x = Math.PI / 2; cap.scale.set(0.285, 0.225, 1); cap.position.y = 0.002;
-  add(cap);
+  // ---------- 받침대 ----------
+  function slab(w, h, d, y, mat) {
+    const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat || plinthMat);
+    m.position.y = y; m.castShadow = true; m.receiveShadow = true; scene.add(m);
+  }
+  slab(1.12, 0.12, 1.12, 0.06);
+  slab(0.84, 0.64, 0.84, 0.44);
+  slab(1.0, 0.07, 1.0, 0.775);
+  slab(1.06, 0.09, 1.06, 0.855);
 
   // ---------- 조명 ----------
-  scene.add(new THREE.HemisphereLight(0xffd9b8, 0x6a3a1c, 0.75));
-  const key = new THREE.DirectionalLight(0xffa860, 2.5);
-  key.position.set(-2.4, -1.2, 2.8);
+  scene.add(new THREE.HemisphereLight(0xffcfa0, 0x4a2410, 0.42));
+  const key = new THREE.DirectionalLight(0xffa458, 2.9);
+  key.position.set(-2.8, 1.2, 3.0);
+  key.target.position.set(0, 2.0, 0);
+  scene.add(key.target);
   key.castShadow = true;
   key.shadow.mapSize.set(2048, 2048);
-  key.shadow.camera.left = -2; key.shadow.camera.right = 2; key.shadow.camera.top = 2.4; key.shadow.camera.bottom = -2;
-  key.shadow.camera.near = 0.5; key.shadow.camera.far = 12;
+  key.shadow.camera.left = -2.2; key.shadow.camera.right = 2.2; key.shadow.camera.top = 3.2; key.shadow.camera.bottom = -1;
+  key.shadow.camera.near = 0.5; key.shadow.camera.far = 14;
   key.shadow.bias = -0.0004; key.shadow.normalBias = 0.02;
   scene.add(key);
-  const rim = new THREE.DirectionalLight(0xffd0a0, 1.4);
-  rim.position.set(2.6, 2.2, -2.2);
+  const rim = new THREE.DirectionalLight(0xffd8b0, 1.2);
+  rim.position.set(2.6, 3.6, -2.4);
   scene.add(rim);
-  const fill = new THREE.DirectionalLight(0xe0803a, 0.7);
-  fill.position.set(2.2, -0.8, 2.4);
-  scene.add(fill);
+  const fire = new THREE.PointLight(0xff6a1a, 2.2, 7, 1.6);
+  fire.position.set(-1.1, 1.1, 1.5);
+  scene.add(fire);
 
   // ---------- 불씨 ----------
-  const EN = 46;
+  const EN = 44;
   const ePos = new Float32Array(EN * 3), eSpd = new Float32Array(EN), ePh = new Float32Array(EN);
   function resetEmber(i, fresh) {
-    const a = Math.random() * Math.PI * 2, r = 0.35 + Math.random() * 0.9;
+    const a = Math.random() * Math.PI * 2, r = 0.4 + Math.random() * 1.2;
     ePos[i * 3] = Math.cos(a) * r; ePos[i * 3 + 2] = Math.sin(a) * r;
-    ePos[i * 3 + 1] = fresh ? Math.random() * 2.6 - 0.2 : -0.2;
-    eSpd[i] = 0.12 + Math.random() * 0.28; ePh[i] = Math.random() * 6.28;
+    ePos[i * 3 + 1] = fresh ? Math.random() * 3.6 : 0.2;
+    eSpd[i] = 0.14 + Math.random() * 0.3; ePh[i] = Math.random() * 6.28;
   }
   for (let i = 0; i < EN; i++) resetEmber(i, true);
   const eGeo = new THREE.BufferGeometry();
@@ -368,11 +403,13 @@
   function frame(now) {
     const dt = Math.min(0.05, (now - last) / 1000); last = now;
     const t = (now - t0) / 1000;
-    key.intensity = 2.5 + Math.sin(t * 7.3) * 0.1 + Math.sin(t * 13.1) * 0.07;
+    const fl = Math.sin(t * 7.3) * 0.1 + Math.sin(t * 13.1) * 0.07;
+    key.intensity = 2.9 + fl;
+    fire.intensity = 2.2 + fl * 3;
     for (let i = 0; i < EN; i++) {
       ePos[i * 3 + 1] += eSpd[i] * dt;
       ePos[i * 3] += Math.sin(t * 1.3 + ePh[i]) * 0.0012;
-      if (ePos[i * 3 + 1] > 2.6) resetEmber(i, false);
+      if (ePos[i * 3 + 1] > 3.8) resetEmber(i, false);
     }
     eGeo.attributes.position.needsUpdate = true;
     renderer.render(scene, cam);
