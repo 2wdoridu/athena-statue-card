@@ -1,0 +1,244 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>아테나 석상</title>
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #140703; }
+  .card {
+    position: fixed; inset: 0;
+    background: radial-gradient(ellipse at 50% 52%, #6e2f0e 0%, #33150a 50%, #120602 100%);
+  }
+  canvas { display: block; width: 100%; height: 100%; touch-action: none; cursor: grab; }
+  canvas:active { cursor: grabbing; }
+  .card::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 30%; pointer-events: none; background: linear-gradient(to bottom, rgba(18, 6, 2, 0), rgba(18, 6, 2, 0.95)); }
+</style>
+<script type="importmap">{ "imports": { "three": "./lib/three.module.js" } }</script>
+</head>
+<body>
+<div class="card" id="card"><canvas id="c"></canvas></div>
+<script type="module">
+import * as THREE from "three";
+import { GLTFLoader } from "./lib/loaders/GLTFLoader.js";
+
+const canvas = document.getElementById("c");
+const card = document.getElementById("card");
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.0;
+
+const scene = new THREE.Scene();
+const cam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 60);
+const BASE_Y = 0.9;
+const TARGET = new THREE.Vector3(0, 2.12, 0);
+const VIEW = { az: Math.PI / 4, el: -Math.PI / 4, zoom: 1 };
+const DEFAULT_VIEW = { az: VIEW.az, el: VIEW.el, zoom: 1 };
+{
+  const q = new URLSearchParams(location.search);
+  if (q.has("ty")) TARGET.y = +q.get("ty");
+  if (q.has("zoom")) VIEW.zoom = +q.get("zoom");
+  if (q.has("el")) VIEW.el = +q.get("el") * Math.PI / 180;
+  if (q.has("az")) VIEW.az = +q.get("az") * Math.PI / 180;
+}
+
+function placeCamera() {
+  const d = 14;
+  cam.position.set(
+    TARGET.x + d * Math.cos(VIEW.el) * Math.sin(VIEW.az),
+    TARGET.y + d * Math.sin(VIEW.el),
+    TARGET.z + d * Math.cos(VIEW.el) * Math.cos(VIEW.az)
+  );
+  cam.lookAt(TARGET);
+}
+function resize() {
+  const w = card.clientWidth, h = card.clientHeight, a = w / h;
+  renderer.setSize(w, h, false);
+  const H = Math.max(2.0, 1.25 / a) / VIEW.zoom;
+  cam.left = -H * a / 2; cam.right = H * a / 2; cam.top = H / 2; cam.bottom = -H / 2;
+  cam.updateProjectionMatrix();
+}
+
+// ---------- 석상: 3D 모델 위에 정면, 뒤, 왼쪽, 오른쪽 사진의 명암을 입힌다 ----------
+// 사진은 모델 높이에 맞춰 잘라 낸 정사각형이다. S는 정사각형 한 변의 모델 길이, (CX, CY, CZ)는 모델 가운데이다.
+const PHOTO = { S: 2.0808, CX: -0.017, CY: -0.018, CZ: -0.016, kF: 0.6525, kB: 0.6724, kL: 0.6392, kR: 0.6688 };
+const loader = new THREE.TextureLoader();
+const photo = (name) => { const t = loader.load("img/body-" + name + ".jpg"); t.colorSpace = THREE.NoColorSpace; t.anisotropy = 8; return t; };
+const tex = { f: photo("front"), b: photo("back"), l: photo("left"), r: photo("right") };
+
+const statueMat = new THREE.MeshStandardMaterial({ color: 0xe9dcc5, roughness: 0.82, metalness: 0 });
+statueMat.customProgramCacheKey = () => "statue-photo-projection";
+statueMat.onBeforeCompile = (shader) => {
+  shader.uniforms.tF = { value: tex.f }; shader.uniforms.tB = { value: tex.b };
+  shader.uniforms.tL = { value: tex.l }; shader.uniforms.tR = { value: tex.r };
+  shader.vertexShader = shader.vertexShader
+    .replace("#include <common>", "#include <common>\nvarying vec3 vOP;\nvarying vec3 vON;")
+    .replace("#include <begin_vertex>", "#include <begin_vertex>\nvOP = position;\nvON = normal;");
+  const f = (n) => n.toFixed(5);
+  shader.fragmentShader = shader.fragmentShader
+    .replace("#include <common>", "#include <common>\nvarying vec3 vOP;\nvarying vec3 vON;\nuniform sampler2D tF;\nuniform sampler2D tB;\nuniform sampler2D tL;\nuniform sampler2D tR;")
+    .replace("#include <map_fragment>", "#include <map_fragment>\n" +
+      "  vec3 on = normalize(vON);\n" +
+      "  float wf = pow(max(on.z, 0.0), 6.0);\n" +
+      "  float wb = pow(max(-on.z, 0.0), 6.0);\n" +
+      "  float wl = pow(max(on.x, 0.0), 6.0);\n" +
+      "  float wr = pow(max(-on.x, 0.0), 6.0);\n" +
+      "  float py = 0.5 + (vOP.y - (" + f(PHOTO.CY) + ")) / " + f(PHOTO.S) + ";\n" +
+      "  float px = (vOP.x - (" + f(PHOTO.CX) + ")) / " + f(PHOTO.S) + ";\n" +
+      "  float pz = (vOP.z - (" + f(PHOTO.CZ) + ")) / " + f(PHOTO.S) + ";\n" +
+      "  float dsum = wf * texture2D(tF, vec2(0.5 + px, py)).r / " + f(PHOTO.kF) + "\n" +
+      "             + wb * texture2D(tB, vec2(0.5 - px, py)).r / " + f(PHOTO.kB) + "\n" +
+      "             + wl * texture2D(tL, vec2(0.5 - pz, py)).r / " + f(PHOTO.kL) + "\n" +
+      "             + wr * texture2D(tR, vec2(0.5 + pz, py)).r / " + f(PHOTO.kR) + ";\n" +
+      "  float wsum = wf + wb + wl + wr;\n" +
+      "  float horiz = 1.0 - smoothstep(0.35, 0.75, abs(on.y));\n" +
+      "  float detail = mix(1.0, dsum / (wsum + 0.0001), smoothstep(0.004, 0.06, wsum) * horiz);\n" +
+      "  diffuseColor.rgb *= clamp(detail, 0.3, 1.4);");
+};
+
+// 목 구간(y0~y1)의 표면을 이웃 꼭짓점 평균으로 부드럽게 한다. 사진에 보이지 않는 턱 아래 면의 거친 모양을 줄인다.
+function smoothBand(geo, y0, y1, iters) {
+  const pos = geo.attributes.position, idx = geo.index.array, n = pos.count;
+  const adj = Array.from({ length: n }, () => new Set());
+  for (let i = 0; i < idx.length; i += 3) {
+    const a = idx[i], b = idx[i + 1], c = idx[i + 2];
+    adj[a].add(b); adj[a].add(c); adj[b].add(a); adj[b].add(c); adj[c].add(a); adj[c].add(b);
+  }
+  const nb = adj.map((s) => Array.from(s));
+  const ss = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+  const w = new Float32Array(n);
+  for (let i = 0; i < n; i++) { const y = pos.getY(i); w[i] = ss(y0, y0 + 0.03, y) * (1 - ss(y1 - 0.03, y1, y)); }
+  const cur = Float32Array.from(pos.array), nxt = new Float32Array(cur.length);
+  for (let it = 0; it < iters; it++) {
+    for (let i = 0; i < n; i++) {
+      const o = i * 3, list = nb[i];
+      if (w[i] <= 0 || !list.length) { nxt[o] = cur[o]; nxt[o + 1] = cur[o + 1]; nxt[o + 2] = cur[o + 2]; continue; }
+      let sx = 0, sy = 0, sz = 0;
+      for (const j of list) { sx += cur[j * 3]; sy += cur[j * 3 + 1]; sz += cur[j * 3 + 2]; }
+      const k = 0.6 * w[i] / list.length;
+      nxt[o] = cur[o] + (sx - cur[o] * list.length) * k;
+      nxt[o + 1] = cur[o + 1] + (sy - cur[o + 1] * list.length) * k;
+      nxt[o + 2] = cur[o + 2] + (sz - cur[o + 2] * list.length) * k;
+    }
+    cur.set(nxt);
+  }
+  pos.array.set(cur);
+  pos.needsUpdate = true;
+}
+
+const holder = new THREE.Group();
+holder.rotation.y = 0.5;
+scene.add(holder);
+const STATUE_H = 1.7;
+new GLTFLoader().load("statue.glb", (gltf) => {
+  const root = gltf.scene;
+  const box = new THREE.Box3().setFromObject(root);
+  const size = box.getSize(new THREE.Vector3());
+  const k = STATUE_H / size.y;
+  root.traverse((o) => {
+    if (!o.isMesh) return;
+    smoothBand(o.geometry, 0.60, 0.745, 60);
+    o.geometry.computeVertexNormals();
+    o.material = statueMat;
+    o.castShadow = true;
+    o.receiveShadow = true;
+  });
+  root.scale.setScalar(k);
+  root.position.set(-PHOTO.CX * k, BASE_Y - box.min.y * k - 0.012, -PHOTO.CZ * k);
+  holder.add(root);
+});
+
+// ---------- 받침대 ----------
+const plinthMat = new THREE.MeshStandardMaterial({ color: 0x9a8670, roughness: 0.88, metalness: 0 });
+function slab(w, h, d, y) {
+  const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), plinthMat);
+  m.position.y = y; m.castShadow = true; m.receiveShadow = true; scene.add(m);
+}
+slab(1.12, 0.12, 1.12, 0.06);
+slab(0.84, 0.64, 0.84, 0.44);
+slab(1.0, 0.07, 1.0, 0.775);
+slab(1.06, 0.09, 1.06, 0.855);
+
+// ---------- 조명 ----------
+scene.add(new THREE.HemisphereLight(0xffcfa0, 0x4a2410, 0.42));
+const key = new THREE.DirectionalLight(0xffa458, 2.9);
+key.position.set(-1.8, 0.9, 3.2);
+key.target.position.set(0, 2.0, 0);
+scene.add(key.target);
+key.castShadow = true;
+key.shadow.mapSize.set(3072, 3072);
+key.shadow.camera.left = -1.7; key.shadow.camera.right = 1.7; key.shadow.camera.top = 1.7; key.shadow.camera.bottom = -1.7;
+key.shadow.camera.near = 0.5; key.shadow.camera.far = 14;
+key.shadow.bias = -0.0003; key.shadow.normalBias = 0.006;
+scene.add(key);
+const rim = new THREE.DirectionalLight(0xffd8b0, 1.2);
+rim.position.set(2.6, 3.6, -2.4);
+scene.add(rim);
+const fire = new THREE.PointLight(0xff6a1a, 2.2, 7, 1.6);
+fire.position.set(-1.1, 1.1, 1.5);
+scene.add(fire);
+const fill = new THREE.DirectionalLight(0xe0803a, 1.3);
+fill.position.set(2.4, -0.6, 2.2);
+scene.add(fill);
+
+// ---------- 불씨 ----------
+const EN = 44;
+const ePos = new Float32Array(EN * 3), eSpd = new Float32Array(EN), ePh = new Float32Array(EN);
+function resetEmber(i, fresh) {
+  const a = Math.random() * Math.PI * 2, r = 0.4 + Math.random() * 1.2;
+  ePos[i * 3] = Math.cos(a) * r; ePos[i * 3 + 2] = Math.sin(a) * r;
+  ePos[i * 3 + 1] = fresh ? Math.random() * 3.6 : 0.2;
+  eSpd[i] = 0.14 + Math.random() * 0.3; ePh[i] = Math.random() * 6.28;
+}
+for (let i = 0; i < EN; i++) resetEmber(i, true);
+const eGeo = new THREE.BufferGeometry();
+eGeo.setAttribute("position", new THREE.BufferAttribute(ePos, 3));
+const dot = (() => {
+  const c = document.createElement("canvas"); c.width = c.height = 32;
+  const g = c.getContext("2d"), gr = g.createRadialGradient(16, 16, 0, 16, 16, 16);
+  gr.addColorStop(0, "rgba(255,220,150,1)"); gr.addColorStop(0.4, "rgba(255,150,50,0.8)"); gr.addColorStop(1, "rgba(255,120,30,0)");
+  g.fillStyle = gr; g.fillRect(0, 0, 32, 32);
+  return new THREE.CanvasTexture(c);
+})();
+scene.add(new THREE.Points(eGeo, new THREE.PointsMaterial({ map: dot, color: 0xffb468, size: 6, sizeAttenuation: false, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false })));
+
+// ---------- 조작: 끌어서 돌리기, 휠 확대, 두 번 누르면 처음 각도 ----------
+let drag = null;
+canvas.addEventListener("pointerdown", (e) => { drag = { x: e.clientX, y: e.clientY }; canvas.setPointerCapture(e.pointerId); });
+canvas.addEventListener("pointermove", (e) => {
+  if (!drag) return;
+  VIEW.az -= (e.clientX - drag.x) * 0.006;
+  VIEW.el = Math.min(1.35, Math.max(-1.35, VIEW.el + (e.clientY - drag.y) * 0.004));
+  drag.x = e.clientX; drag.y = e.clientY;
+  placeCamera();
+});
+canvas.addEventListener("pointerup", () => { drag = null; });
+canvas.addEventListener("wheel", (e) => { e.preventDefault(); VIEW.zoom = Math.min(2.5, Math.max(0.6, VIEW.zoom * (e.deltaY < 0 ? 1.08 : 0.925))); resize(); }, { passive: false });
+canvas.addEventListener("dblclick", () => { Object.assign(VIEW, DEFAULT_VIEW); placeCamera(); resize(); });
+window.addEventListener("resize", resize);
+
+placeCamera(); resize();
+let last = performance.now(), t0 = last;
+function frame(now) {
+  const dt = Math.min(0.05, (now - last) / 1000); last = now;
+  const t = (now - t0) / 1000;
+  const fl = Math.sin(t * 7.3) * 0.1 + Math.sin(t * 13.1) * 0.07;
+  key.intensity = 2.9 + fl;
+  fire.intensity = 2.2 + fl * 3;
+  for (let i = 0; i < EN; i++) {
+    ePos[i * 3 + 1] += eSpd[i] * dt;
+    ePos[i * 3] += Math.sin(t * 1.3 + ePh[i]) * 0.0012;
+    if (ePos[i * 3 + 1] > 3.8) resetEmber(i, false);
+  }
+  eGeo.attributes.position.needsUpdate = true;
+  renderer.render(scene, cam);
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
