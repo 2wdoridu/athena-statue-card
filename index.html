@@ -261,10 +261,12 @@
   // 어깨 위로 흘러내린 땋은 머리
   (function braid() {
     const curve = new THREE.CatmullRomCurve3([
-      new THREE.Vector3(-0.085, 1.605, 0.0),
-      new THREE.Vector3(-0.122, 1.49, 0.065),
-      new THREE.Vector3(-0.13, 1.34, 0.12),
-      new THREE.Vector3(-0.115, 1.17, 0.14)
+      new THREE.Vector3(-0.045, 1.585, -0.088),
+      new THREE.Vector3(-0.092, 1.535, -0.05),
+      new THREE.Vector3(-0.108, 1.455, 0.0),
+      new THREE.Vector3(-0.135, 1.36, 0.075),
+      new THREE.Vector3(-0.128, 1.25, 0.132),
+      new THREE.Vector3(-0.112, 1.15, 0.15)
     ]);
     const N = 17;
     for (let i = 0; i < N; i++) {
@@ -279,50 +281,66 @@
     }
   })();
 
-  // ---------- 팔 ----------
-  function between(p1, p2, geom, parent) {
-    const a = new THREE.Vector3(...p1), b = new THREE.Vector3(...p2);
-    const m = new THREE.Mesh(geom, marble);
-    m.position.copy(a).add(b).multiplyScalar(0.5);
-    m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), b.clone().sub(a).normalize());
-    return add(m, parent);
-  }
-  function ball(p, r) {
-    const s = new THREE.Mesh(new THREE.SphereGeometry(r, 20, 16), marble);
-    s.position.set(...p);
-    return add(s);
-  }
-  function flutedCylinder(rTop, rBot, h, n, amp) {
-    const g = new THREE.CylinderGeometry(rTop, rBot, h, 40, 8, true);
-    const p = g.attributes.position;
-    for (let i = 0; i < p.count; i++) {
-      const x = p.getX(i), z = p.getZ(i), th = Math.atan2(x, z);
-      const k = 1 + amp * (Math.abs(Math.sin(n * th / 2)) - 0.5);
-      p.setX(i, x * k); p.setZ(i, z * k);
+  // ---------- 팔: 관절 구 없이 하나로 이어지는 면 ----------
+  function sweep(curve, radiusAt, flute, NT, NR) {
+    const frames = curve.computeFrenetFrames(NT, false);
+    const pos = [], uv = [], idx = [];
+    for (let i = 0; i <= NT; i++) {
+      const t = i / NT, P = curve.getPointAt(t), N = frames.normals[i], B = frames.binormals[i], r = radiusAt(t);
+      for (let j = 0; j <= NR; j++) {
+        const a = 2 * Math.PI * j / NR;
+        const k = flute ? 1 + flute.amp * (Math.abs(Math.sin(flute.n * a / 2)) - 0.5) * flute.mask(t) : 1;
+        const c = Math.cos(a) * r * k, s = Math.sin(a) * r * k;
+        pos.push(P.x + N.x * c + B.x * s, P.y + N.y * c + B.y * s, P.z + N.z * c + B.z * s);
+        uv.push(j / NR * 2, t * 2);
+      }
     }
+    for (let i = 0; i < NT; i++) for (let j = 0; j < NR; j++) {
+      const a = i * (NR + 1) + j, b = a + NR + 1;
+      idx.push(a, a + 1, b, b, a + 1, b + 1);
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+    g.setAttribute("uv", new THREE.Float32BufferAttribute(uv, 2));
+    g.setIndex(idx);
     g.computeVertexNormals();
     return g;
   }
   function arm(S, E, W, roll) {
-    const len = (a, b) => Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]);
-    ball(S, 0.054); ball(E, 0.04); ball(W, 0.03);
-    between(S, E, new THREE.CylinderGeometry(0.04, 0.047, len(S, E), 22));
-    between(E, W, new THREE.CylinderGeometry(0.029, 0.038, len(E, W), 22));
-    const sleeveEnd = [S[0] + (E[0] - S[0]) * 0.62, S[1] + (E[1] - S[1]) * 0.62, S[2] + (E[2] - S[2]) * 0.62];
-    between(S, sleeveEnd, flutedCylinder(0.076, 0.07, len(S, sleeveEnd), 18, 0.1));
-    const dir = new THREE.Vector3(W[0] - E[0], W[1] - E[1], W[2] - E[2]).normalize();
+    const V = (p) => new THREE.Vector3(p[0], p[1], p[2]);
+    const s = V(S), e = V(E), w = V(W);
+    const up = e.clone().sub(s).normalize(), fo = w.clone().sub(e).normalize();
+    const pre = e.clone().addScaledVector(up, -0.075), post = e.clone().addScaledVector(fo, 0.075);
+    const arc = pre.clone().add(post).multiplyScalar(0.5).lerp(e, 0.55);
+    const curve = new THREE.CatmullRomCurve3([s, pre, arc, post, w], false, "centripetal");
+    const rad = makeInterp([[0, 0.052], [0.3, 0.042], [0.5, 0.036], [0.72, 0.032], [1, 0.026]]);
+    const a = add(new THREE.Mesh(sweep(curve, rad, null, 60, 28), marble));
+    // 소매: 어깨 위쪽부터 팔 중간까지 덮는 짧은 옷자락
+    const pts = [];
+    for (let i = 0; i <= 5; i++) pts.push(curve.getPointAt(0.52 * i / 5));
+    const sleeve = new THREE.CatmullRomCurve3(pts, false, "centripetal");
+    const srad = makeInterp([[0, 0.062], [0.5, 0.068], [0.85, 0.072], [1, 0.074]]);
+    add(new THREE.Mesh(sweep(sleeve, srad, { n: 18, amp: 0.1, mask: (t) => sm(0.1, 0.5, t) }, 40, 48), marble));
+    // 소매 끝단 두께
+    const endP = sleeve.getPointAt(1), endT = sleeve.getTangentAt(1);
+    const hem = new THREE.Mesh(new THREE.TorusGeometry(0.0735, 0.0065, 12, 64), marble);
+    hem.position.copy(endP);
+    hem.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), endT);
+    add(hem);
+    // 손목에서 이어지는 손
+    const dir = w.clone().sub(curve.getPointAt(0.93)).normalize();
     const hand = new THREE.Group();
-    hand.position.set(...W);
+    hand.position.copy(w);
     hand.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
     hand.rotateY(roll);
     statue.add(hand);
     const palm = new THREE.Mesh(new THREE.SphereGeometry(1, 22, 16), marble);
-    palm.scale.set(0.042, 0.05, 0.02); palm.position.y = 0.046;
+    palm.scale.set(0.04, 0.05, 0.019); palm.position.y = 0.04;
     add(palm, hand);
     for (let i = 0; i < 4; i++) {
       const L = [0.036, 0.043, 0.04, 0.032][i];
       const fg = new THREE.Group();
-      fg.position.set((i - 1.5) * 0.0115, 0.09, 0);
+      fg.position.set((i - 1.5) * 0.0115, 0.084, 0);
       fg.rotation.x = 0.28; fg.rotation.z = (i - 1.5) * -0.06;
       const f = new THREE.Mesh(new THREE.CapsuleGeometry(0.0078, L, 4, 8), marble);
       f.position.y = L * 0.5 + 0.004;
@@ -330,13 +348,13 @@
       hand.add(fg);
     }
     const th = new THREE.Mesh(new THREE.CapsuleGeometry(0.0088, 0.03, 4, 8), marble);
-    th.position.set(-0.04, 0.058, 0.006); th.rotation.z = 0.75;
+    th.position.set(-0.038, 0.052, 0.006); th.rotation.z = 0.75;
     add(th, hand);
   }
   // 석상의 오른팔: 팔꿈치를 굽혀 손을 가슴 앞으로
-  arm([-0.228, 1.33, 0.0], [-0.258, 1.06, 0.05], [-0.14, 1.17, 0.225], -1.2);
+  arm([-0.19, 1.31, 0.0], [-0.258, 1.06, 0.05], [-0.14, 1.17, 0.225], -1.2);
   // 왼팔: 몸 옆으로 늘어뜨림
-  arm([0.228, 1.33, 0.0], [0.278, 1.05, 0.01], [0.278, 0.8, 0.07], 1.2);
+  arm([0.19, 1.31, 0.0], [0.278, 1.05, 0.01], [0.278, 0.8, 0.07], 1.2);
 
   // ---------- 받침대 ----------
   function slab(w, h, d, y, mat) {
