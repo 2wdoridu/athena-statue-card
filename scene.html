@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>아테나 석상</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #0d0502; overflow: hidden; }
+  .scene { position: fixed; inset: 0; background: #0d0502 url("img/scene.jpg") center 62% / cover no-repeat; }
+  /* 그림보다 가로로 넓은 화면에서는 그림 전체가 보이게 한다 */
+  @media (min-aspect-ratio: 1/2) { .scene { background-size: contain; background-position: center; } }
+</style>
+</head>
+<body>
+<div class="scene" role="img" aria-label="아테나 석상"></div>
+</body>
+</html>
