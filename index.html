@@ -179,91 +179,145 @@
   }
   ring(0.176, 0.146, 0.011, 1.1);
 
-  // ---------- 목, 머리 ----------
-  const neck = add(new THREE.Mesh(new THREE.CylinderGeometry(0.043, 0.054, 0.14, 28), marble));
-  neck.position.set(0.004, 1.465, 0.01);
-
+  // ---------- 머리와 목 ----------
+  // 두개골은 높이별 단면(조금 네모진 타원)을 쌓아서 만든다. 좌표 단위는 m, 원점은 머리 한가운데.
+  const HEAD_TOP = 0.12, CHIN = -0.115;
+  const HA = makeInterp([[-0.115, 0.0], [-0.108, 0.018], [-0.098, 0.034], [-0.08, 0.055], [-0.05, 0.069], [-0.02, 0.075], [0.02, 0.077], [0.06, 0.073], [0.09, 0.058], [0.108, 0.036], [0.12, 0.0]]);
+  const HB = makeInterp([[-0.115, 0.0], [-0.108, 0.032], [-0.098, 0.052], [-0.08, 0.068], [-0.05, 0.082], [-0.02, 0.088], [0.02, 0.09], [0.06, 0.088], [0.09, 0.076], [0.108, 0.055], [0.12, 0.0]]);
+  const HC = makeInterp([[-0.115, 0.0], [-0.105, 0.02], [-0.098, 0.026], [-0.07, 0.016], [-0.03, 0.003], [0.02, -0.004], [0.07, -0.003], [0.12, -0.008]]);
+  function headXZ(y, th) {
+    const a = Math.max(0, HA(y)), b = Math.max(0, HB(y)), c = HC(y);
+    const s = Math.sin(th), co = Math.cos(th), e = 0.8;
+    return [a * Math.sign(s) * Math.pow(Math.abs(s), e), c + b * Math.sign(co) * Math.pow(Math.abs(co), e)];
+  }
+  // 얼굴의 굴곡: [앞으로 튀어나온 양, 그늘 정도]
+  function faceRelief(x, y) {
+    const ax = Math.abs(x);
+    let d = 0, o = 0;
+    d += 0.009 * gau(x, y - 0.006, 0.007, 0.02);
+    d += 0.012 * gau(x, y + 0.012, 0.009, 0.026);
+    d += 0.013 * gau(x, y + 0.036, 0.011, 0.011);
+    d += 0.008 * gau(ax - 0.016, y + 0.038, 0.007, 0.008);
+    const nostril = gau(ax - 0.0085, y + 0.046, 0.005, 0.0035);
+    d -= 0.004 * nostril; o += 0.55 * nostril;
+    const sock = gau(ax - 0.031, y - 0.002, 0.016, 0.013);
+    d -= 0.005 * sock; o += 0.16 * sock;
+    d += 0.0055 * gau(ax - 0.032, y - 0.002, 0.012, 0.007);
+    d += 0.0035 * gau(ax - 0.032, y - 0.0045, 0.011, 0.0034);
+    const crease = gau(ax - 0.032, y - 0.0145, 0.015, 0.003);
+    d -= 0.0025 * crease; o += 0.2 * crease;
+    d += 0.007 * gau(ax - 0.028, y - 0.025, 0.026, 0.006);
+    d += 0.002 * gau(ax - 0.032, y + 0.0065, 0.011, 0.0028);
+    d += 0.006 * gau(ax - 0.056, y + 0.002, 0.018, 0.016);
+    d -= 0.004 * gau(ax - 0.046, y + 0.048, 0.018, 0.018);
+    d -= 0.0025 * gau(x, y + 0.054, 0.005, 0.01);
+    d += 0.0055 * gau(x, y + 0.0655, 0.016, 0.0038);
+    d += 0.0065 * gau(x, y + 0.0785, 0.017, 0.0055);
+    const mline = gau(x, y + 0.0715, 0.02, 0.0017);
+    d -= 0.0045 * mline; o += 0.4 * mline;
+    d -= 0.002 * gau(ax - 0.021, y + 0.0715, 0.004, 0.004);
+    d += 0.0075 * gau(x, y + 0.098, 0.019, 0.012);
+    d -= 0.003 * gau(x, y + 0.088, 0.016, 0.004);
+    return [d, o];
+  }
   function headGeometry() {
-    const g = new THREE.SphereGeometry(1, 140, 110);
-    const p = g.attributes.position;
-    const col = new Float32Array(p.count * 3);
+    const g = surface(320, 260, (v, th) => {
+      const y = CHIN + v * (HEAD_TOP - CHIN);
+      let [x, z] = headXZ(y, th);
+      const wf = sm(0.15, 0.65, Math.cos(th)) * sm(0.115, 0.085, y);
+      if (wf > 0) z += faceRelief(x, y)[0] * wf;
+      return [x, y, z];
+    });
+    const p = g.attributes.position, col = new Float32Array(p.count * 3);
     for (let i = 0; i < p.count; i++) {
       const x = p.getX(i), y = p.getY(i), z = p.getZ(i);
-      const f = Math.max(0, (z - 0.05) / 0.95);
-      let d = 0, occ = 0;
-      d += 0.085 * gau(x, y - 0.02, 0.065, 0.19) * f;                                   // 콧대
-      d += 0.06 * gau(x, y + 0.17, 0.09, 0.06) * f;                                  // 코끝
-      d += 0.09 * gau(x, y - 0.26, 0.5, 0.05) * f;                                   // 눈썹뼈
-      const sock = gau(x - 0.42, y - 0.17, 0.13, 0.06) + gau(x + 0.42, y - 0.17, 0.13, 0.06);
-      d -= 0.08 * sock * f; occ += 0.2 * sock * f;                                  // 눈두덩
-      const lid = gau(x - 0.42, y - 0.2, 0.14, 0.022) + gau(x + 0.42, y - 0.2, 0.14, 0.022);
-      d += 0.08 * lid * f;                                                           // 윗눈꺼풀 선
-      const lips = gau(x, y + 0.37, 0.19, 0.04);
-      d += 0.075 * lips * f;
-      const seam = gau(x, y + 0.315, 0.15, 0.012);
-      d -= 0.04 * seam * f; occ += 0.25 * seam * f;                                   // 입술 사이
-      d += 0.1 * gau(x, y + 0.65, 0.19, 0.1) * f;                                    // 턱
-      d -= 0.06 * (gau(x - 0.6, y + 0.16, 0.1, 0.2) + gau(x + 0.6, y + 0.16, 0.1, 0.2)) * f;
-      const nost = gau(x - 0.12, y + 0.2, 0.05, 0.03) + gau(x + 0.12, y + 0.2, 0.05, 0.03);
-      occ += 0.22 * nost * f;                                                         // 콧구멍
-      occ += 0.25 * gau(x, y + 0.82, 0.4, 0.08);                                     // 턱 아래
-      const k = 1 + d;
-      p.setXYZ(i, x * k, y * k, z * k);
-      const c = 1 - Math.min(0.6, occ);
+      let o = 0;
+      if (z > 0.03) o += faceRelief(x, y)[1];
+      o += 0.3 * gau(x, y + 0.112, 0.05, 0.012);
+      const c = 1 - Math.min(0.55, o);
       col[i * 3] = c; col[i * 3 + 1] = c; col[i * 3 + 2] = c;
     }
     g.setAttribute("color", new THREE.BufferAttribute(col, 3));
-    g.computeVertexNormals();
     return g;
   }
+  // 머리카락: 이마선이 깨끗하게 끝나는 얇은 껍질. 가운데 가르마에서 뒤로 넘김.
+  const hairLowerFn = makeInterp([[0, 0.07], [0.3, 0.071], [0.7, 0.05], [1.1, 0.022], [1.5, 0.012], [1.75, -0.012], [2.2, -0.052], [Math.PI, -0.09]]);
+  function hairLower(th) { return hairLowerFn(Math.abs(Math.atan2(Math.sin(th), Math.cos(th)))); }
   function hairGeometry() {
-    const g = new THREE.SphereGeometry(1, 150, 110);
-    const p = g.attributes.position;
-    for (let i = 0; i < p.count; i++) {
-      const x = p.getX(i), y = p.getY(i), z = p.getZ(i);
-      const ang = Math.atan2(x, z);
-      const flow = Math.sin(ang * 14 + y * 5) * 0.004 * (0.5 + 0.5 * y);
-      const part = 0.014 * Math.exp(-(x * x) / 0.0025) * (y > 0.1 ? 1 : 0);
-      const k = 1 + flow - part;
-      p.setXYZ(i, x * k, y * k, z * k);
-    }
-    g.computeVertexNormals();
-    return g;
+    return surface(120, 200, (v, th) => {
+      const yL = hairLower(th), yT = HEAD_TOP - 0.002;
+      const y = yL + v * (yT - yL);
+      const [hx, hz] = headXZ(y, th), cc = HC(y);
+      const dx = hx, dz = hz - cc, l = Math.hypot(dx, dz) || 1;
+      const ang = Math.atan2(Math.sin(th), Math.cos(th));
+      const al = Math.atan2(hx, 0.94 * y - 0.35 * hz);
+      let T = 0.0012 + 0.0075 * sm(0, 0.35, v);
+      T += 0.0017 * Math.sin(30 * al) * sm(0.05, 0.4, v);
+      T += 0.0028 * Math.sin(9 * ang + 2 * v) * sm(0.1, 0.6, v);
+      T -= 0.0042 * Math.exp(-(ang * ang) / 0.006) * sm(0.15, 0.5, v);
+      return [hx + dx / l * T, y, hz + dz / l * T];
+    });
   }
-  const hairMat = marbleHair.clone();
-  hairMat.side = THREE.FrontSide;
-  hairMat.onBeforeCompile = function (shader) {
-    shader.vertexShader = shader.vertexShader
-      .replace("#include <common>", "#include <common>\nvarying vec3 vLocal;")
-      .replace("#include <begin_vertex>", "#include <begin_vertex>\nvLocal = position;");
-    shader.fragmentShader = shader.fragmentShader
-      .replace("#include <common>", "#include <common>\nvarying vec3 vLocal;")
-      .replace("void main() {", "void main() {\n  vec3 hd = normalize(vLocal);\n  float hl = 0.5 - 0.5 * smoothstep(0.3, 0.93, abs(hd.x));\n  if ((hd.z > 0.02 && hd.y < hl) || hd.y < -0.72) discard;");
-  };
+  const neckTop = new THREE.Group();
+  neckTop.position.set(0.004, 1.545, 0.006);
+  neckTop.rotation.x = 0.1;
+  statue.add(neckTop);
   const head = new THREE.Group();
-  head.position.set(0.004, 1.625, 0.016);
-  head.rotation.x = 0.16;
-  statue.add(head);
-  const face = add(new THREE.Mesh(headGeometry(), faceMat), head);
-  face.scale.set(0.08, 0.108, 0.094);
-  const hair = add(new THREE.Mesh(hairGeometry(), hairMat), head);
-  hair.scale.set(0.0835, 0.1115, 0.0985); hair.position.set(0, 0.003, -0.003);
-  // 이마선을 가리는 머리띠
+  head.position.set(0, 0.075, 0.018);
+  neckTop.add(head);
+  add(new THREE.Mesh(headGeometry(), faceMat), head);
+  add(new THREE.Mesh(hairGeometry(), marbleHair), head);
+  // 정수리 이음 막음
+  (function () { const c = new THREE.Mesh(new THREE.SphereGeometry(1, 16, 12), marbleHair); c.scale.set(0.017, 0.008, 0.017); c.position.set(0, 0.112, -0.012); add(c, head); })();
+  // 귀
+  [-1, 1].forEach(sd => {
+    const ear = new THREE.Mesh(new THREE.SphereGeometry(1, 20, 16), marble);
+    ear.scale.set(0.0085, 0.0245, 0.0145);
+    ear.position.set(sd * 0.0765, -0.014, -0.008);
+    ear.rotation.y = sd * 0.3;
+    add(ear, head);
+  });
+  // 뒤로 모아 올린 쪽머리
   (function () {
-    const m = new THREE.Mesh(new THREE.TorusGeometry(1, 0.0075, 12, 80), marble);
-    m.rotation.x = Math.PI / 2 + 0.12; m.scale.set(0.0765, 0.091, 1); m.position.set(0, 0.057, -0.004);
-    add(m, head);
+    const bun = new THREE.Mesh(new THREE.SphereGeometry(1, 36, 24), marbleHair);
+    bun.scale.set(0.046, 0.036, 0.032); bun.position.set(0, -0.05, -0.098); bun.rotation.x = 0.3;
+    add(bun, head);
   })();
-  const bun = new THREE.Mesh(new THREE.SphereGeometry(1, 28, 20), marbleHair);
-  bun.scale.set(0.052, 0.05, 0.052); bun.position.set(0, -0.035, -0.1);
-  add(bun, head);
+
+  // 목: 두개골 뒤쪽 아래에서 시작해 어깨로 이어지는 단면 쌓기
+  const neckGeo = surface(50, 72, (v, th) => {
+    const y = 1.385 + v * 0.2;
+    const fl = Math.exp(-v * 7), a = 0.05 + 0.032 * fl - 0.005 * v, b = 0.052 + 0.03 * fl - 0.006 * v, zc = 0.002 + 0.016 * v;
+    return [Math.sin(th) * a + 0.004, y, Math.cos(th) * b + zc];
+  });
+  add(new THREE.Mesh(neckGeo, marble));
+  // 목 옆 근육: 귀 뒤에서 쇄골 사이 오목한 곳으로
+  [-1, 1].forEach(sd => {
+    const A = new THREE.Vector3(sd * 0.044, 1.56, -0.01), B = new THREE.Vector3(sd * 0.013, 1.43, 0.047);
+    const len = A.distanceTo(B);
+    const m = new THREE.Mesh(new THREE.CapsuleGeometry(0.0105, len - 0.021, 6, 14), marble);
+    m.position.copy(A).add(B).multiplyScalar(0.5);
+    m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), B.clone().sub(A).normalize());
+    m.scale.set(1, 1, 0.55);
+    add(m);
+  });
+  // 어깨에서 목으로 올라오는 승모근
+  [-1, 1].forEach(sd => {
+    const A = new THREE.Vector3(sd * 0.052, 1.455, -0.012), B = new THREE.Vector3(sd * 0.15, 1.372, -0.02);
+    const len = A.distanceTo(B);
+    const m = new THREE.Mesh(new THREE.CapsuleGeometry(0.019, len - 0.038, 6, 16), marble);
+    m.position.copy(A).add(B).multiplyScalar(0.5);
+    m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), B.clone().sub(A).normalize());
+    m.scale.set(1, 1, 0.6);
+    add(m);
+  });
 
   // 어깨 위로 흘러내린 땋은 머리
   (function braid() {
     const curve = new THREE.CatmullRomCurve3([
-      new THREE.Vector3(-0.045, 1.585, -0.088),
-      new THREE.Vector3(-0.092, 1.535, -0.05),
-      new THREE.Vector3(-0.108, 1.455, 0.0),
+      new THREE.Vector3(-0.03, 1.575, -0.07),
+      new THREE.Vector3(-0.085, 1.53, -0.045),
+      new THREE.Vector3(-0.108, 1.46, 0.0),
       new THREE.Vector3(-0.135, 1.36, 0.075),
       new THREE.Vector3(-0.128, 1.25, 0.132),
       new THREE.Vector3(-0.112, 1.15, 0.15)
@@ -373,10 +427,10 @@
   key.target.position.set(0, 2.0, 0);
   scene.add(key.target);
   key.castShadow = true;
-  key.shadow.mapSize.set(2048, 2048);
-  key.shadow.camera.left = -2.2; key.shadow.camera.right = 2.2; key.shadow.camera.top = 3.2; key.shadow.camera.bottom = -1;
+  key.shadow.mapSize.set(3072, 3072);
+  key.shadow.camera.left = -1.7; key.shadow.camera.right = 1.7; key.shadow.camera.top = 1.7; key.shadow.camera.bottom = -1.7;
   key.shadow.camera.near = 0.5; key.shadow.camera.far = 14;
-  key.shadow.bias = -0.0004; key.shadow.normalBias = 0.02;
+  key.shadow.bias = -0.0003; key.shadow.normalBias = 0.006;
   scene.add(key);
   const rim = new THREE.DirectionalLight(0xffd8b0, 1.2);
   rim.position.set(2.6, 3.6, -2.4);
@@ -384,6 +438,9 @@
   const fire = new THREE.PointLight(0xff6a1a, 2.2, 7, 1.6);
   fire.position.set(-1.1, 1.1, 1.5);
   scene.add(fire);
+  const fill = new THREE.DirectionalLight(0xe0803a, 0.9);
+  fill.position.set(2.4, -0.6, 2.2);
+  scene.add(fill);
 
   // ---------- 불씨 ----------
   const EN = 44;
